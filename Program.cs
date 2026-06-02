@@ -99,8 +99,13 @@ var bugMetrics = new BugMetrics(
     config.Metrics.TrailingWindowDays,
     config.Metrics.GoalStartDate);
 
+var throughputDefectMetrics = new ThroughputDefectMetrics(
+    cache,
+    config.Metrics.GoalStartDate,
+    excludedRepoIds);
+
 var shortNames = MailmapResolver.LoadFromHome();
-var dashboard = new Dashboard(cache, clock, reviewMetrics, bugMetrics, config, shortNames, excludedRepoNames);
+var dashboard = new Dashboard(cache, clock, reviewMetrics, bugMetrics, throughputDefectMetrics, config, shortNames, excludedRepoNames);
 
 while (true)
 {
@@ -115,6 +120,10 @@ while (true)
     {
         await RunSyncAsync(isColdStart: false);
     }
+    if (key.Key == ConsoleKey.Tab)
+    {
+        dashboard.ToggleFocus();
+    }
     if (key.Key is ConsoleKey.J or ConsoleKey.DownArrow)
     {
         dashboard.MoveSelection(+1);
@@ -125,7 +134,7 @@ while (true)
     }
     if (key.Key == ConsoleKey.Enter)
     {
-        OpenInBrowser(dashboard.SelectedPrUrl);
+        OpenInBrowser(dashboard.SelectedUrl);
     }
 }
 
