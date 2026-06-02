@@ -182,15 +182,16 @@ public sealed class Dashboard
         var table = new Table()
             .Border(TableBorder.None)
             .HideHeaders()
-            .AddColumn(new TableColumn(string.Empty))
-            .AddColumn(new TableColumn(string.Empty))
-            .AddColumn(new TableColumn(string.Empty))
-            .AddColumn(new TableColumn(string.Empty).RightAligned());
+            .AddColumn(new TableColumn(string.Empty))   // cursor
+            .AddColumn(new TableColumn(string.Empty))   // id
+            .AddColumn(new TableColumn(string.Empty))   // status (emoji)
+            .AddColumn(new TableColumn(string.Empty))   // title
+            .AddColumn(new TableColumn(string.Empty).RightAligned());   // age
 
         for (var i = 0; i < _recentBugs.Count; i++)
         {
             var b = _recentBugs[i];
-            // Whole row coloured by where the bug was found: Production red, Test yellow,
+            // Whole row coloured by where the bug was found: Production red, QA/Test orange,
             // Dev grey, anything unset dimmed. Keeps the "red = production leakage" signal.
             var style = StyleForFoundIn(b.FoundInSystem);
 
@@ -198,6 +199,7 @@ public sealed class Dashboard
             var selected = focused && i == _selectedBugIndex;
             var cursorCell = selected ? "[cyan]❯[/]" : " ";
             var idCell = $"[{style}]{b.Id}[/]";
+            var statusCell = StatusEmoji(b.State);
             var titleCell = $"[{style}]{Markup.Escape(Truncate(b.Title, 30))}[/]";
             var ageCell = $"[{style}]{FormatAge(b.CreatedUtc, now)}[/]";
 
@@ -205,11 +207,12 @@ public sealed class Dashboard
             {
                 cursorCell = Underline(cursorCell);
                 idCell = Underline(idCell);
+                statusCell = Underline(statusCell);
                 titleCell = Underline(titleCell);
                 ageCell = Underline(ageCell);
             }
 
-            table.AddRow(cursorCell, idCell, titleCell, ageCell);
+            table.AddRow(cursorCell, idCell, statusCell, titleCell, ageCell);
         }
 
         return WithFocusBorder(new Panel(table).Header("[bold]Last 10 bugs[/] [grey](newest first)[/]"), focused);
@@ -221,6 +224,19 @@ public sealed class Dashboard
         panel.Border(BoxBorder.Rounded);
         return focused ? panel.BorderColor(Color.Cyan1) : panel;
     }
+
+    // Emoji for a bug's workflow State. Unknown/unset states fall back to a question mark.
+    private static string StatusEmoji(string? state) => state switch
+    {
+        "New" => "🆕",
+        "To Do" => "📋",
+        "Testing" => "🧪",
+        "Approved" => "👍",
+        "Blocked" => "⛔",
+        "Done" => "✅",
+        "Removed" => "🗑️",
+        _ => "❔"
+    };
 
     // Spectre style for a bug's "Found System" category (Bug-Report-Guidelines wiki).
     // Production (customer-found) is the worst → red; QA (release candidate) and Test (test

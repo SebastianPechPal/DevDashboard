@@ -75,19 +75,20 @@ public sealed class BugWorkItemCache
         return new DlrCounts(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4));
     }
 
-    public sealed record RecentBug(int Id, string Project, string? Title, string? FoundInSystem, DateTimeOffset CreatedUtc);
+    public sealed record RecentBug(int Id, string Project, string? Title, string? FoundInSystem, string? State, DateTimeOffset CreatedUtc);
 
     /// <summary>
     /// The most recently created bugs/issues, newest first, limited to <paramref name="count"/>.
     /// Excludes state 'Removed' — the same filter as <see cref="CountInWindow"/> — so the list
     /// agrees with the DLR counts. (created_utc is stored round-trippable, so a lexical DESC sort
-    /// is chronological.) Project is returned so callers can build the work-item URL.
+    /// is chronological.) Project is returned so callers can build the work-item URL; State drives
+    /// the status emoji in the panel.
     /// </summary>
     public IReadOnlyList<RecentBug> GetRecent(int count)
     {
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
-            SELECT id, project, title, found_in_system, created_utc
+            SELECT id, project, title, found_in_system, state, created_utc
             FROM bug_work_item
             WHERE state IS NULL OR state <> 'Removed'
             ORDER BY created_utc DESC
@@ -104,7 +105,8 @@ public sealed class BugWorkItemCache
                 Project: r.GetString(1),
                 Title: r.IsDBNull(2) ? null : r.GetString(2),
                 FoundInSystem: r.IsDBNull(3) ? null : r.GetString(3),
-                CreatedUtc: DateTimeOffset.Parse(r.GetString(4))));
+                State: r.IsDBNull(4) ? null : r.GetString(4),
+                CreatedUtc: DateTimeOffset.Parse(r.GetString(5))));
         }
         return results;
     }
