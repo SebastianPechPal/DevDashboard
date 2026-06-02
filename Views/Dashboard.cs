@@ -148,11 +148,27 @@ public sealed class Dashboard
                 };
             }
 
-            var cursorCell = i == _selectedIndex ? "[cyan]❯[/]" : " ";
+            var selected = i == _selectedIndex;
+            var cursorCell = selected ? "[cyan]❯[/]" : " ";
             var repoCell = excluded ? repo.Name + "*" : repo.Name;
             var prCell = $"[bold]{pr.Id}[/] [grey]{Markup.Escape(Truncate(pr.Title, 50))}[/]";
             var authorCell = _shortNames.Shorten(pr.AuthorDisplayName, AuthorEmailFor(pr));
             var reviewersCell = BuildReviewersCell(pr.Id);
+
+            if (selected)
+            {
+                // Underline the whole row so the cursor reference isn't lost on long lines.
+                // Underline combines with each cell's foreground colour, unlike a background
+                // block which would hide the default-coloured and low-contrast (yellow) cells.
+                cursorCell = Underline(cursorCell);
+                repoCell = Underline(repoCell);
+                prCell = Underline(prCell);
+                authorCell = Underline(authorCell);
+                ageText = Underline(ageText);
+                lastChangeText = Underline(lastChangeText);
+                reviewersCell = Underline(reviewersCell);
+                status = Underline(status);
+            }
 
             table.AddRow(cursorCell, repoCell, prCell, authorCell, ageText, lastChangeText, reviewersCell, status);
         }
@@ -280,6 +296,10 @@ public sealed class Dashboard
     }
 
     private static string ColorFor(double pct) => pct >= TargetPercentage ? "green" : pct >= BaselinePercentage ? "yellow" : "red";
+
+    // Wraps already-marked-up cell content in an underline decoration; the inner foreground
+    // colours are preserved because Spectre combines decorations with the active style.
+    private static string Underline(string cell) => $"[underline]{cell}[/]";
 
     private DateTimeOffset? ReadPreviousFullSyncCutoff()
     {
