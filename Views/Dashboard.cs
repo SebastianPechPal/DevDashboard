@@ -46,7 +46,7 @@ public sealed class Dashboard
     public void Render()
     {
         AnsiConsole.Clear();
-        AnsiConsole.Write(new FigletText("Goal Dashboard").Color(Color.Cyan1));
+        AnsiConsole.Write(new FigletText("Dev Dashboard").Color(Color.Cyan1));
         AnsiConsole.MarkupLine($"[grey]Last refresh: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}[/]");
         AnsiConsole.WriteLine();
 

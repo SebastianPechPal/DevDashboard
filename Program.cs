@@ -8,7 +8,7 @@ using CLIGoalHelper.Sync;
 using CLIGoalHelper.Views;
 using Spectre.Console;
 
-AnsiConsole.Write(new FigletText("Goal Dashboard").Color(Color.Cyan1));
+AnsiConsole.Write(new FigletText("Dev Dashboard").Color(Color.Cyan1));
 
 BusinessClock.SelfCheck();
 var clock = BusinessClock.Default;
