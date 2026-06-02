@@ -4,6 +4,10 @@ namespace CLIGoalHelper.Ado;
 
 public sealed record VoteEvent(string VoterId, int VoteValue, DateTimeOffset At);
 
+public sealed record CommentAuthor(string Id, string? DisplayName, string? Email, DateTimeOffset FirstCommentAt);
+
+public sealed record ThreadActivity(IReadOnlyList<VoteEvent> Votes, IReadOnlyList<CommentAuthor> Commenters, DateTimeOffset? LatestCommentUtc);
+
 public sealed class ThreadService
 {
     private readonly AdoClient _client;
@@ -16,10 +20,11 @@ public sealed class ThreadService
     }
 
     /// <summary>
-    /// Returns all vote events on a PR in chronological order. A vote of 0 means the vote
-    /// was reset and is included here — callers decide whether to count it.
+    /// Fetches all threads on a PR and returns vote events plus the set of human commenters
+    /// (one entry per author, timestamp = their earliest text comment). Vote events with a
+    /// value of 0 (resets) are included — callers decide whether to count them.
     /// </summary>
-    public async Task<List<VoteEvent>> GetVoteEventsAsync(
+    public async Task<ThreadActivity> GetThreadActivityAsync(
         string repoId,
         int pullRequestId,
         CancellationToken ct = default)
@@ -29,20 +34,66 @@ public sealed class ThreadService
 
         using var doc = await _client.GetJsonAsync(url, ct);
 
-        var events = new List<VoteEvent>();
+        var votes = new List<VoteEvent>();
+        var earliestCommentByAuthor = new Dictionary<string, CommentAuthor>();
+        DateTimeOffset? latestCommentUtc = null;
+
         foreach (var thread in doc.RootElement.GetProperty("value").EnumerateArray())
         {
-            if (!IsVoteUpdate(thread, out var voteValue))
+            if (IsVoteUpdate(thread, out var voteValue) && TryReadVoter(thread, out var voterId, out var voteAt))
             {
+                votes.Add(new VoteEvent(voterId, voteValue, voteAt));
                 continue;
             }
-            if (!TryReadVoter(thread, out var voterId, out var at))
+
+            foreach (var comment in EnumerateTextComments(thread))
             {
-                continue;
+                if (!earliestCommentByAuthor.TryGetValue(comment.Id, out var existing)
+                    || comment.FirstCommentAt < existing.FirstCommentAt)
+                {
+                    earliestCommentByAuthor[comment.Id] = comment;
+                }
+                if (latestCommentUtc is null || comment.FirstCommentAt > latestCommentUtc)
+                {
+                    latestCommentUtc = comment.FirstCommentAt;
+                }
             }
-            events.Add(new VoteEvent(voterId, voteValue, at));
         }
-        return events.OrderBy(e => e.At).ToList();
+
+        votes.Sort((a, b) => a.At.CompareTo(b.At));
+        return new ThreadActivity(votes, earliestCommentByAuthor.Values.ToList(), latestCommentUtc);
+    }
+
+    private static IEnumerable<CommentAuthor> EnumerateTextComments(JsonElement thread)
+    {
+        if (!thread.TryGetProperty("comments", out var comments) || comments.ValueKind != JsonValueKind.Array)
+        {
+            yield break;
+        }
+
+        foreach (var comment in comments.EnumerateArray())
+        {
+            // Skip system / codeChange / deleted comments — only count real human text.
+            if (comment.TryGetProperty("commentType", out var ct) && ct.GetString() is { } kind && kind != "text")
+            {
+                continue;
+            }
+            if (comment.TryGetProperty("isDeleted", out var del) && del.ValueKind == JsonValueKind.True)
+            {
+                continue;
+            }
+            if (!TryGetObject(comment, "author", out var author)) continue;
+            if (!author.TryGetProperty("id", out var idEl)) continue;
+            var id = idEl.GetString();
+            if (string.IsNullOrEmpty(id)) continue;
+            if (!comment.TryGetProperty("publishedDate", out var pub)) continue;
+
+            var displayName = author.TryGetProperty("displayName", out var n) ? n.GetString() : null;
+            var email = author.TryGetProperty("uniqueName", out var u) ? u.GetString() : null;
+            var at = DateTimeOffset.Parse(pub.GetString()!);
+
+            yield return new CommentAuthor(id, displayName, email, at);
+        }
     }
 
     private static bool IsVoteUpdate(JsonElement thread, out int voteValue)

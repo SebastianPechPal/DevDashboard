@@ -23,13 +23,20 @@ public sealed class ReviewMetrics
     private readonly int _trailingDays;
     private readonly DateTime _goalStartDate;
     private readonly string? _personalIdentityId;
+    private readonly IReadOnlyCollection<string> _excludedRepoIds;
 
-    public ReviewMetrics(CacheStore cache, int trailingDays, DateTime goalStartDate, string? personalIdentityId)
+    public ReviewMetrics(
+        CacheStore cache,
+        int trailingDays,
+        DateTime goalStartDate,
+        string? personalIdentityId,
+        IReadOnlyCollection<string> excludedRepoIds)
     {
         _cache = cache;
         _trailingDays = trailingDays;
         _goalStartDate = goalStartDate;
         _personalIdentityId = personalIdentityId;
+        _excludedRepoIds = excludedRepoIds;
     }
 
     public ReviewMetricsSnapshot Compute()
@@ -41,11 +48,11 @@ public sealed class ReviewMetrics
             TimeSpan.Zero);
         var personalSince = now.AddDays(-30);
 
-        var trailing = _cache.PullRequests.TrailingWindow(trailingSince);
-        var monthly = _cache.PullRequests.MonthlyBuckets(trendSince);
-        var median = _cache.PullRequests.MedianBusinessHours(trailingSince);
+        var trailing = _cache.PullRequests.TrailingWindow(trailingSince, _excludedRepoIds);
+        var monthly = _cache.PullRequests.MonthlyBuckets(trendSince, _excludedRepoIds);
+        var median = _cache.PullRequests.MedianBusinessHours(trailingSince, _excludedRepoIds);
         var personalVotes = _personalIdentityId != null
-            ? _cache.PullRequests.CountFirstVotesBy(_personalIdentityId, personalSince)
+            ? _cache.PullRequests.CountFirstVotesBy(_personalIdentityId, personalSince, _excludedRepoIds)
             : 0;
 
         var passPct = trailing.Total == 0 ? 0 : 100.0 * trailing.Pass / trailing.Total;

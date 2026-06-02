@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using CLIGoalHelper.Ado;
 using CLIGoalHelper.BusinessTime;
 using CLIGoalHelper.Cache;
@@ -22,6 +23,7 @@ var identityService = new IdentityService(client, config.AzureDevOps.Organizatio
 var repositoryService = new RepositoryService(client, config.AzureDevOps.OrganizationUrl);
 var pullRequestService = new PullRequestService(client, config.AzureDevOps.OrganizationUrl);
 var threadService = new ThreadService(client, config.AzureDevOps.OrganizationUrl);
+var iterationService = new IterationService(client, config.AzureDevOps.OrganizationUrl);
 var workItemService = new WorkItemService(client, config.AzureDevOps.OrganizationUrl);
 
 await AnsiConsole.Status()
@@ -62,6 +64,7 @@ var syncService = new SyncService(
     cache,
     pullRequestService,
     threadService,
+    iterationService,
     workItemService,
     clock,
     cache.Identities.GetAll().Select(i => i.Id),
@@ -77,18 +80,27 @@ var personalId = cache.Identities.GetAll()
     .FirstOrDefault(i => i.Email != null && i.Email.Equals("s.pech@palfinger.com", StringComparison.OrdinalIgnoreCase))
     ?.Id;
 
+var excludedRepoNames = config.ExcludedFromStatsRepos
+    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+var excludedRepoIds = cache.Repos.GetAll()
+    .Where(r => excludedRepoNames.Contains(r.Name))
+    .Select(r => r.Id)
+    .ToList();
+
 var reviewMetrics = new ReviewMetrics(
     cache,
     config.Metrics.TrailingWindowDays,
     config.Metrics.GoalStartDate,
-    personalId);
+    personalId,
+    excludedRepoIds);
 
 var bugMetrics = new BugMetrics(
     cache,
     config.Metrics.TrailingWindowDays,
     config.Metrics.GoalStartDate);
 
-var dashboard = new Dashboard(cache, clock, reviewMetrics, bugMetrics, config);
+var shortNames = MailmapResolver.LoadFromHome();
+var dashboard = new Dashboard(cache, clock, reviewMetrics, bugMetrics, config, shortNames, excludedRepoNames);
 
 while (true)
 {
@@ -102,6 +114,18 @@ while (true)
     if (key.Key == ConsoleKey.R)
     {
         await RunSyncAsync(isColdStart: false);
+    }
+    if (key.Key is ConsoleKey.J or ConsoleKey.DownArrow)
+    {
+        dashboard.MoveSelection(+1);
+    }
+    if (key.Key is ConsoleKey.K or ConsoleKey.UpArrow)
+    {
+        dashboard.MoveSelection(-1);
+    }
+    if (key.Key == ConsoleKey.Enter)
+    {
+        OpenInBrowser(dashboard.SelectedPrUrl);
     }
 }
 
@@ -118,4 +142,25 @@ async Task RunSyncAsync(bool isColdStart)
             new PercentageColumn(),
             new ElapsedTimeColumn())
         .StartAsync(ctx => syncService.SyncAsync(ctx));
+}
+
+void OpenInBrowser(string? url)
+{
+    if (url is null)
+    {
+        return;
+    }
+
+    // Open in Chrome explicitly (the user's request): "chrome" resolves via the Windows
+    // App Paths registry key under ShellExecute. If Chrome isn't found, fall back to the
+    // default browser rather than crashing the dashboard.
+    try
+    {
+        Process.Start(new ProcessStartInfo("chrome", url) { UseShellExecute = true });
+    }
+    catch (Exception ex)
+    {
+        AnsiConsole.MarkupLine($"[yellow]Chrome launch failed ({Markup.Escape(ex.Message)}); using default browser.[/]");
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+    }
 }

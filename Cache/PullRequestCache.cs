@@ -77,6 +77,19 @@ public sealed class PullRequestCache
         }
     }
 
+    public void SetLastActivity(int prId, DateTimeOffset lastActivityUtc)
+    {
+        lock (_writeLock)
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = """
+                UPDATE pull_request SET last_activity_utc = $at WHERE pr_id = $id;
+                """;
+            cmd.Parameters.AddWithValue("$id", prId);
+            cmd.Parameters.AddWithValue("$at", lastActivityUtc.UtcDateTime.ToString("o"));
+            cmd.ExecuteNonQuery();
+        }
+    }
     public CachedPullRequest? GetById(int id)
     {
         using var cmd = _connection.CreateCommand();
@@ -122,17 +135,18 @@ public sealed class PullRequestCache
 
     public sealed record TrailingWindowCounts(int Total, int Pass, int Fail, int NoVote);
 
-    public TrailingWindowCounts TrailingWindow(DateTimeOffset since)
+    public TrailingWindowCounts TrailingWindow(DateTimeOffset since, IReadOnlyCollection<string>? excludedRepoIds = null)
     {
         using var cmd = _connection.CreateCommand();
-        cmd.CommandText = """
+        var exclusion = BuildExclusion(cmd, excludedRepoIds);
+        cmd.CommandText = $"""
             SELECT
                 COUNT(*),
                 COUNT(CASE WHEN sla_met = 1 THEN 1 END),
                 COUNT(CASE WHEN sla_met = 0 THEN 1 END),
                 COUNT(CASE WHEN first_required_vote_utc IS NULL THEN 1 END)
             FROM pull_request
-            WHERE creation_utc >= $since AND status = 'Completed';
+            WHERE creation_utc >= $since AND status = 'Completed'{exclusion};
             """;
         cmd.Parameters.AddWithValue("$since", since.UtcDateTime.ToString("o"));
         using var r = cmd.ExecuteReader();
@@ -142,16 +156,17 @@ public sealed class PullRequestCache
 
     public sealed record MonthBucket(string YearMonth, int Total, int Pass);
 
-    public List<MonthBucket> MonthlyBuckets(DateTimeOffset since)
+    public List<MonthBucket> MonthlyBuckets(DateTimeOffset since, IReadOnlyCollection<string>? excludedRepoIds = null)
     {
         using var cmd = _connection.CreateCommand();
-        cmd.CommandText = """
+        var exclusion = BuildExclusion(cmd, excludedRepoIds);
+        cmd.CommandText = $"""
             SELECT
                 substr(creation_utc, 1, 7) AS month,
                 COUNT(*),
                 COUNT(CASE WHEN sla_met = 1 THEN 1 END)
             FROM pull_request
-            WHERE creation_utc >= $since AND status = 'Completed'
+            WHERE creation_utc >= $since AND status = 'Completed'{exclusion}
             GROUP BY month
             ORDER BY month;
             """;
@@ -165,12 +180,13 @@ public sealed class PullRequestCache
         return results;
     }
 
-    public double? MedianBusinessHours(DateTimeOffset since)
+    public double? MedianBusinessHours(DateTimeOffset since, IReadOnlyCollection<string>? excludedRepoIds = null)
     {
         using var cmd = _connection.CreateCommand();
-        cmd.CommandText = """
+        var exclusion = BuildExclusion(cmd, excludedRepoIds);
+        cmd.CommandText = $"""
             SELECT business_hours_elapsed FROM pull_request
-            WHERE creation_utc >= $since AND status = 'Completed' AND business_hours_elapsed IS NOT NULL
+            WHERE creation_utc >= $since AND status = 'Completed' AND business_hours_elapsed IS NOT NULL{exclusion}
             ORDER BY business_hours_elapsed;
             """;
         cmd.Parameters.AddWithValue("$since", since.UtcDateTime.ToString("o"));
@@ -186,23 +202,114 @@ public sealed class PullRequestCache
             : (values[values.Count / 2 - 1] + values[values.Count / 2]) / 2.0;
     }
 
-    public int CountFirstVotesBy(string voterId, DateTimeOffset since)
+    /// <summary>
+    /// Replaces the engagement set for a PR atomically. Existing rows for the PR are deleted
+    /// and the new set inserted, so callers pass the complete snapshot — not a delta.
+    /// </summary>
+    public void ReplaceEngagementsFor(int prId, IReadOnlyCollection<CachedPrEngagement> rows)
+    {
+        lock (_writeLock)
+        {
+            using var tx = _connection.BeginTransaction();
+
+            using (var del = _connection.CreateCommand())
+            {
+                del.Transaction = tx;
+                del.CommandText = "DELETE FROM pr_engagement WHERE pr_id = $id;";
+                del.Parameters.AddWithValue("$id", prId);
+                del.ExecuteNonQuery();
+            }
+
+            using (var ins = _connection.CreateCommand())
+            {
+                ins.Transaction = tx;
+                ins.CommandText = """
+                    INSERT INTO pr_engagement (
+                        pr_id, identity_id, display_name, email, kind, first_engagement_utc)
+                    VALUES ($pr, $id, $name, $mail, $kind, $at);
+                    """;
+                var pPr = ins.Parameters.Add("$pr", SqliteType.Integer);
+                var pId = ins.Parameters.Add("$id", SqliteType.Text);
+                var pName = ins.Parameters.Add("$name", SqliteType.Text);
+                var pMail = ins.Parameters.Add("$mail", SqliteType.Text);
+                var pKind = ins.Parameters.Add("$kind", SqliteType.Text);
+                var pAt = ins.Parameters.Add("$at", SqliteType.Text);
+
+                foreach (var row in rows)
+                {
+                    pPr.Value = row.PrId;
+                    pId.Value = row.IdentityId;
+                    pName.Value = (object?)row.DisplayName ?? DBNull.Value;
+                    pMail.Value = (object?)row.Email ?? DBNull.Value;
+                    pKind.Value = row.Kind.ToString();
+                    pAt.Value = (object?)row.FirstEngagementUtc?.UtcDateTime.ToString("o") ?? DBNull.Value;
+                    ins.ExecuteNonQuery();
+                }
+            }
+
+            tx.Commit();
+        }
+    }
+
+    public List<CachedPrEngagement> GetEngagementsFor(int prId)
     {
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
+            SELECT pr_id, identity_id, display_name, email, kind, first_engagement_utc
+            FROM pr_engagement
+            WHERE pr_id = $id;
+            """;
+        cmd.Parameters.AddWithValue("$id", prId);
+        using var r = cmd.ExecuteReader();
+        var rows = new List<CachedPrEngagement>();
+        while (r.Read())
+        {
+            rows.Add(new CachedPrEngagement(
+                PrId: r.GetInt32(0),
+                IdentityId: r.GetString(1),
+                DisplayName: r.IsDBNull(2) ? null : r.GetString(2),
+                Email: r.IsDBNull(3) ? null : r.GetString(3),
+                Kind: Enum.Parse<EngagementKind>(r.GetString(4)),
+                FirstEngagementUtc: r.IsDBNull(5) ? null : DateTimeOffset.Parse(r.GetString(5))));
+        }
+        return rows;
+    }
+
+    public int CountFirstVotesBy(string voterId, DateTimeOffset since, IReadOnlyCollection<string>? excludedRepoIds = null)
+    {
+        using var cmd = _connection.CreateCommand();
+        var exclusion = BuildExclusion(cmd, excludedRepoIds);
+        cmd.CommandText = $"""
             SELECT COUNT(*) FROM pull_request
-            WHERE creation_utc >= $since AND first_required_vote_id = $vid;
+            WHERE creation_utc >= $since AND first_required_vote_id = $vid{exclusion};
             """;
         cmd.Parameters.AddWithValue("$since", since.UtcDateTime.ToString("o"));
         cmd.Parameters.AddWithValue("$vid", voterId);
         return Convert.ToInt32(cmd.ExecuteScalar());
     }
 
+    private static string BuildExclusion(SqliteCommand cmd, IReadOnlyCollection<string>? excludedRepoIds)
+    {
+        if (excludedRepoIds is null || excludedRepoIds.Count == 0)
+        {
+            return string.Empty;
+        }
+        var placeholders = new List<string>(excludedRepoIds.Count);
+        var i = 0;
+        foreach (var id in excludedRepoIds)
+        {
+            var p = $"$exrepo{i++}";
+            placeholders.Add(p);
+            cmd.Parameters.AddWithValue(p, id);
+        }
+        return " AND repo_id NOT IN (" + string.Join(",", placeholders) + ")";
+    }
+
     private const string SelectClause = """
         SELECT pr_id, repo_id, title, author_id, author_display_name,
                creation_utc, status, closed_utc,
                first_required_vote_id, first_required_vote_utc, first_required_vote_value,
-               business_hours_elapsed, sla_met
+               business_hours_elapsed, sla_met, last_activity_utc
         FROM pull_request
         """;
 
@@ -232,6 +339,7 @@ public sealed class PullRequestCache
             FirstRequiredVoteUtc: r.IsDBNull(9) ? null : DateTimeOffset.Parse(r.GetString(9)),
             FirstRequiredVoteValue: r.IsDBNull(10) ? null : r.GetInt32(10),
             BusinessHoursElapsed: r.IsDBNull(11) ? null : r.GetDouble(11),
-            SlaMet: r.IsDBNull(12) ? null : r.GetInt32(12) == 1);
+            SlaMet: r.IsDBNull(12) ? null : r.GetInt32(12) == 1,
+            LastActivityUtc: r.IsDBNull(13) ? null : DateTimeOffset.Parse(r.GetString(13)));
     }
 }

@@ -6,6 +6,7 @@ public sealed class AppConfig
 {
     public required AzureDevOpsConfig AzureDevOps { get; init; }
     public required List<string> RequiredReviewers { get; init; }
+    public List<string> ExcludedFromStatsRepos { get; init; } = new();
     public required MetricsConfig Metrics { get; init; }
 
     public static AppConfig Load()

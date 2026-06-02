@@ -3,6 +3,10 @@ using CLIGoalHelper.Cache;
 
 namespace CLIGoalHelper.Ado;
 
+public sealed record PrReviewer(string Id, string? DisplayName, string? Email, bool IsContainer);
+
+public sealed record ActivePrSnapshot(CachedPullRequest Pr, IReadOnlyList<PrReviewer> Reviewers);
+
 public sealed class PullRequestService
 {
     private const int PageSize = 1000;
@@ -14,6 +18,58 @@ public sealed class PullRequestService
     {
         _client = client;
         _organizationUrl = organizationUrl.TrimEnd('/');
+    }
+
+    /// <summary>
+    /// Lists active PRs together with their current reviewers. The ADO list endpoint returns
+    /// reviewers inline, so this is one HTTP call per page just like <see cref="ListAsync"/>.
+    /// Container/group reviewer entries are included unfiltered so callers decide what to do.
+    /// </summary>
+    public async Task<List<ActivePrSnapshot>> ListActiveWithReviewersAsync(
+        string repoId, CancellationToken ct = default)
+    {
+        var results = new List<ActivePrSnapshot>();
+        var skip = 0;
+
+        while (true)
+        {
+            var url = BuildUrl(repoId, PullRequestStatus.Active, minTime: null, skip);
+            using var doc = await _client.GetJsonAsync(url, ct);
+
+            var pageCount = 0;
+            foreach (var pr in doc.RootElement.GetProperty("value").EnumerateArray())
+            {
+                results.Add(new ActivePrSnapshot(Map(pr, repoId), MapReviewers(pr)));
+                pageCount++;
+            }
+
+            if (pageCount < PageSize)
+            {
+                return results;
+            }
+            skip += PageSize;
+        }
+    }
+
+    private static List<PrReviewer> MapReviewers(JsonElement pr)
+    {
+        if (!pr.TryGetProperty("reviewers", out var rs) || rs.ValueKind != JsonValueKind.Array)
+        {
+            return new List<PrReviewer>();
+        }
+        var list = new List<PrReviewer>();
+        foreach (var r in rs.EnumerateArray())
+        {
+            if (!r.TryGetProperty("id", out var idEl)) continue;
+            var id = idEl.GetString();
+            if (string.IsNullOrEmpty(id)) continue;
+
+            var displayName = r.TryGetProperty("displayName", out var d) ? d.GetString() : null;
+            var email = r.TryGetProperty("uniqueName", out var e) ? e.GetString() : null;
+            var isContainer = r.TryGetProperty("isContainer", out var c) && c.ValueKind == JsonValueKind.True;
+            list.Add(new PrReviewer(id, displayName, email, isContainer));
+        }
+        return list;
     }
 
     /// <summary>
@@ -127,6 +183,7 @@ public sealed class PullRequestService
             FirstRequiredVoteUtc: null,
             FirstRequiredVoteValue: null,
             BusinessHoursElapsed: null,
-            SlaMet: null);
+            SlaMet: null,
+            LastActivityUtc: null);
     }
 }

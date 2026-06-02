@@ -32,4 +32,19 @@ public sealed record CachedPullRequest(
     DateTimeOffset? FirstRequiredVoteUtc,
     int? FirstRequiredVoteValue,
     double? BusinessHoursElapsed,
-    bool? SlaMet);
+    bool? SlaMet,
+    DateTimeOffset? LastActivityUtc);
+
+public enum EngagementKind
+{
+    Reviewer,
+    Commenter
+}
+
+public sealed record CachedPrEngagement(
+    int PrId,
+    string IdentityId,
+    string? DisplayName,
+    string? Email,
+    EngagementKind Kind,
+    DateTimeOffset? FirstEngagementUtc);

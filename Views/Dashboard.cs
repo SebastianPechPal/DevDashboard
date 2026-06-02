@@ -17,16 +17,30 @@ public sealed class Dashboard
     private readonly ReviewMetrics _metrics;
     private readonly BugMetrics _bugMetrics;
     private readonly AppConfig _config;
-    private readonly Dictionary<string, string> _nameById;
+    private readonly MailmapResolver _shortNames;
+    private readonly IReadOnlySet<string> _excludedRepoNames;
 
-    public Dashboard(CacheStore cache, BusinessClock clock, ReviewMetrics metrics, BugMetrics bugMetrics, AppConfig config)
+    // The open-PR rows in display order, rebuilt on every Render. The j/k selection cursor
+    // and "open in browser" (enter) both index into this list.
+    private IReadOnlyList<(CachedPullRequest Pr, CachedRepo Repo)> _openPrs = [];
+    private int _selectedIndex;
+
+    public Dashboard(
+        CacheStore cache,
+        BusinessClock clock,
+        ReviewMetrics metrics,
+        BugMetrics bugMetrics,
+        AppConfig config,
+        MailmapResolver shortNames,
+        IReadOnlySet<string> excludedRepoNames)
     {
         _cache = cache;
         _clock = clock;
         _metrics = metrics;
         _bugMetrics = bugMetrics;
         _config = config;
-        _nameById = cache.Identities.GetAll().ToDictionary(i => i.Id, i => i.DisplayName);
+        _shortNames = shortNames;
+        _excludedRepoNames = excludedRepoNames;
     }
 
     public void Render()
@@ -42,7 +56,7 @@ public sealed class Dashboard
         AnsiConsole.WriteLine();
         AnsiConsole.Write(BuildDlrPanel());
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[grey][[r]] refresh   [[q]] quit[/]");
+        AnsiConsole.MarkupLine("[grey][[j/k]] select   [[enter]] open in browser   [[r]] refresh   [[q]] quit[/]");
     }
 
     private Panel BuildDlrPanel()
@@ -84,59 +98,126 @@ public sealed class Dashboard
     {
         var slaHours = (double)_config.Metrics.SlaBusinessHours;
         var now = DateTimeOffset.UtcNow;
+        var newSinceCutoff = ReadPreviousFullSyncCutoff();
 
         var table = new Table()
             .Border(TableBorder.MinimalHeavyHead)
+            .AddColumn(" ")
             .AddColumn("Repo")
             .AddColumn("PR")
             .AddColumn("Author")
             .AddColumn("Age (biz)")
-            .AddColumn("First required vote")
+            .AddColumn("Last change")
+            .AddColumn("Reviewers")
             .AddColumn("Status");
 
-        var openPrs = _cache.Repos.GetAll()
-            .SelectMany(repo => _cache.PullRequests.GetActiveForRepo(repo.Id).Select(pr => (pr, repo)))
-            .OrderBy(t => t.pr.CreationUtc);
+        _openPrs = _cache.Repos.GetAll()
+            .SelectMany(repo => _cache.PullRequests.GetActiveForRepo(repo.Id).Select(pr => (Pr: pr, Repo: repo)))
+            .OrderBy(t => t.Pr.CreationUtc)
+            .ToList();
 
-        foreach (var (pr, repo) in openPrs)
+        // Keep the cursor on a valid row as the list grows or shrinks across refreshes.
+        _selectedIndex = _openPrs.Count == 0 ? 0 : Math.Clamp(_selectedIndex, 0, _openPrs.Count - 1);
+
+        for (var i = 0; i < _openPrs.Count; i++)
         {
-            // Already-approved PRs are done from a required-reviewer perspective; skip.
-            if (pr.FirstRequiredVoteValue is >= 5)
-            {
-                continue;
-            }
-
+            var (pr, repo) = _openPrs[i];
             var businessAge = _clock.ElapsedHours(pr.CreationUtc, now);
             var ageText = FormatBusinessHours(businessAge);
+            var lastChangeUtc = pr.LastActivityUtc ?? pr.CreationUtc;
+            var lastChangeText = FormatBusinessHours(_clock.ElapsedHours(lastChangeUtc, now));
+            if (newSinceCutoff.HasValue && lastChangeUtc > newSinceCutoff.Value)
+            {
+                lastChangeText = $"[green]{lastChangeText}[/]";
+            }
+            var excluded = _excludedRepoNames.Contains(repo.Name);
 
-            string voteText, status;
+            string status;
             if (pr.FirstRequiredVoteUtc is null)
             {
-                voteText = "[grey](none)[/]";
                 status = businessAge > slaHours ? "[red]OVERDUE[/]" : "[yellow]Needs answer[/]";
             }
             else
             {
-                var voter = _nameById.GetValueOrDefault(pr.FirstRequiredVoteId!, pr.FirstRequiredVoteId!);
-                var voteAge = _clock.ElapsedHours(pr.FirstRequiredVoteUtc.Value, now);
-                voteText = $"{voter} [grey]({pr.FirstRequiredVoteValue:+#;-#;0}, {FormatBusinessHours(voteAge)} ago)[/]";
                 status = pr.FirstRequiredVoteValue switch
                 {
+                    >= 5 => "[green]Approved · awaiting more[/]",
                     -5 => "[orange1]Waiting for author[/]",
                     <= -10 => "[red]Rejected[/]",
                     _ => "[grey]?[/]"
                 };
             }
 
+            var cursorCell = i == _selectedIndex ? "[cyan]❯[/]" : " ";
+            var repoCell = excluded ? repo.Name + "*" : repo.Name;
             var prCell = $"[bold]{pr.Id}[/] [grey]{Markup.Escape(Truncate(pr.Title, 50))}[/]";
-            var authorCell = Markup.Escape(pr.AuthorDisplayName ?? "?");
-            table.AddRow(repo.Name, prCell, authorCell, ageText, voteText, status);
+            var authorCell = _shortNames.Shorten(pr.AuthorDisplayName, AuthorEmailFor(pr));
+            var reviewersCell = BuildReviewersCell(pr.Id);
+
+            table.AddRow(cursorCell, repoCell, prCell, authorCell, ageText, lastChangeText, reviewersCell, status);
         }
 
         return new Panel(table)
             .Header($"[bold]Open PRs[/] [grey](SLA = {slaHours}h business)[/]")
             .Border(BoxBorder.Rounded)
             .Expand();
+    }
+
+    // Moves the open-PR selection cursor by delta rows, clamped to the list bounds
+    // (vim j/k, no wrap-around). The row list itself is rebuilt on the next Render.
+    public void MoveSelection(int delta)
+    {
+        if (_openPrs.Count == 0)
+        {
+            return;
+        }
+
+        _selectedIndex = Math.Clamp(_selectedIndex + delta, 0, _openPrs.Count - 1);
+    }
+
+    // The Azure DevOps web URL of the currently selected PR, or null when the list is empty.
+    public string? SelectedPrUrl
+    {
+        get
+        {
+            if (_selectedIndex < 0 || _selectedIndex >= _openPrs.Count)
+            {
+                return null;
+            }
+
+            var (pr, repo) = _openPrs[_selectedIndex];
+            var org = _config.AzureDevOps.OrganizationUrl.TrimEnd('/');
+            return $"{org}/{Uri.EscapeDataString(repo.Project)}/_git/{Uri.EscapeDataString(repo.Name)}/pullrequest/{pr.Id}";
+        }
+    }
+
+    private static string? AuthorEmailFor(CachedPullRequest pr)
+    {
+        // The PR row doesn't store author email separately — fall back to None so the
+        // resolver derives the short code from AuthorDisplayName alone. (Acceptable because
+        // collision handling is explicitly out of scope per design.)
+        return null;
+    }
+
+    private string BuildReviewersCell(int prId)
+    {
+        var engagements = _cache.PullRequests.GetEngagementsFor(prId);
+        if (engagements.Count == 0)
+        {
+            return "[grey](none)[/]";
+        }
+
+        // Sort by first-engagement time ascending; passive reviewers (no action yet) go last.
+        var ordered = engagements
+            .OrderBy(e => e.FirstEngagementUtc ?? DateTimeOffset.MaxValue)
+            .Select(e =>
+            {
+                var color = e.Kind == EngagementKind.Reviewer ? "green" : "red";
+                var code = _shortNames.Shorten(e.DisplayName, e.Email);
+                return $"[{color}]{code}[/]";
+            });
+
+        return string.Join(" ", ordered);
     }
 
     private Panel BuildMetricPanel()
@@ -166,6 +247,12 @@ public sealed class Dashboard
             body.Append($"[yellow]Data quality:[/] {snap.TrailingNoVote} completed PR(s) had no vote from any of the four — investigate");
         }
 
+        if (_excludedRepoNames.Count > 0)
+        {
+            body.AppendLine();
+            body.Append($"[grey]* PRs from {string.Join(", ", _excludedRepoNames)} are excluded from these stats[/]");
+        }
+
         return new Panel(body.ToString().TrimEnd())
             .Header($"[bold]PR review turnaround[/] [grey](trailing {_config.Metrics.TrailingWindowDays}d, completed only)[/]")
             .Border(BoxBorder.Rounded)
@@ -193,4 +280,10 @@ public sealed class Dashboard
     }
 
     private static string ColorFor(double pct) => pct >= TargetPercentage ? "green" : pct >= BaselinePercentage ? "yellow" : "red";
+
+    private DateTimeOffset? ReadPreviousFullSyncCutoff()
+    {
+        var raw = _cache.Meta.Get(Sync.SyncService.PreviousFullSyncMetaKey);
+        return raw is null ? null : DateTimeOffset.Parse(raw);
+    }
 }

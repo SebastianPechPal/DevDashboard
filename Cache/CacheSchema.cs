@@ -64,6 +64,26 @@ internal static class CacheSchema
 
         CREATE INDEX IF NOT EXISTS idx_bug_created ON bug_work_item(created_utc);
         CREATE INDEX IF NOT EXISTS idx_bug_project ON bug_work_item(project);
+        """,
+
+        // v5 — per-PR engagement (reviewers + commenters) for the open-PRs panel
+        """
+        CREATE TABLE IF NOT EXISTS pr_engagement (
+            pr_id INTEGER NOT NULL,
+            identity_id TEXT NOT NULL,
+            display_name TEXT NULL,
+            email TEXT NULL,
+            kind TEXT NOT NULL,
+            first_engagement_utc TEXT NULL,
+            PRIMARY KEY (pr_id, identity_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pre_pr ON pr_engagement(pr_id);
+        """,
+
+        // v6 — last-activity timestamp for the open-PRs view (latest commit push OR latest text comment)
+        """
+        ALTER TABLE pull_request ADD COLUMN last_activity_utc TEXT NULL;
         """
     };
 
