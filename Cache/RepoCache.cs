@@ -68,7 +68,7 @@ public sealed class RepoCache
             Id: r.GetString(0),
             Project: r.GetString(1),
             Name: r.GetString(2),
-            LastSyncUtc: r.IsDBNull(3) ? null : DateTimeOffset.Parse(r.GetString(3)),
+            LastSyncUtc: r.IsDBNull(3) ? null : IsoParse.Offset(r.GetString(3)),
             LocalPath: r.IsDBNull(4) ? null : r.GetString(4));
     }
 }

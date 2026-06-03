@@ -33,7 +33,7 @@ public sealed class IterationService
             {
                 if (!it.TryGetProperty("createdDate", out var cd)) continue;
                 if (cd.ValueKind != JsonValueKind.String) continue;
-                var at = DateTimeOffset.Parse(cd.GetString()!);
+                var at = IsoParse.Offset(cd.GetString()!);
                 if (latest is null || at > latest) latest = at;
             }
             return latest;

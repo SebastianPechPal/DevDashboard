@@ -79,7 +79,7 @@ public sealed class WorkItemService
                 Title: TryGetString(f, "System.Title"),
                 FoundInSystem: TryGetString(f, "Custom.FoundinSystem"),
                 State: TryGetString(f, "System.State"),
-                CreatedUtc: DateTimeOffset.Parse(f.GetProperty("System.CreatedDate").GetString()!)));
+                CreatedUtc: IsoParse.Offset(f.GetProperty("System.CreatedDate").GetString()!)));
         }
         return results;
     }

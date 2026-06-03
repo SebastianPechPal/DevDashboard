@@ -549,6 +549,6 @@ public sealed class Dashboard
     private DateTimeOffset? ReadPreviousFullSyncCutoff()
     {
         var raw = _cache.Meta.Get(Sync.SyncService.PreviousFullSyncMetaKey);
-        return raw is null ? null : DateTimeOffset.Parse(raw);
+        return raw is null ? null : IsoParse.Offset(raw);
     }
 }

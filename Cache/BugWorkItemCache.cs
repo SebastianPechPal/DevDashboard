@@ -106,7 +106,7 @@ public sealed class BugWorkItemCache
                 Title: r.IsDBNull(2) ? null : r.GetString(2),
                 FoundInSystem: r.IsDBNull(3) ? null : r.GetString(3),
                 State: r.IsDBNull(4) ? null : r.GetString(4),
-                CreatedUtc: DateTimeOffset.Parse(r.GetString(5))));
+                CreatedUtc: IsoParse.Offset(r.GetString(5))));
         }
         return results;
     }

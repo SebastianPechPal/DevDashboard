@@ -90,7 +90,7 @@ public sealed class ThreadService
 
             var displayName = author.TryGetProperty("displayName", out var n) ? n.GetString() : null;
             var email = author.TryGetProperty("uniqueName", out var u) ? u.GetString() : null;
-            var at = DateTimeOffset.Parse(pub.GetString()!);
+            var at = IsoParse.Offset(pub.GetString()!);
 
             yield return new CommentAuthor(id, displayName, email, at);
         }
@@ -130,7 +130,7 @@ public sealed class ThreadService
         if (!first.TryGetProperty("publishedDate", out var pub)) return false;
 
         voterId = id;
-        at = DateTimeOffset.Parse(pub.GetString()!);
+        at = IsoParse.Offset(pub.GetString()!);
         return true;
     }
 

@@ -123,7 +123,7 @@ public sealed class PullRequestCache
             WHERE repo_id = $repo AND status IN ('Completed', 'Abandoned');
             """;
         cmd.Parameters.AddWithValue("$repo", repoId);
-        return cmd.ExecuteScalar() is string s ? DateTimeOffset.Parse(s) : null;
+        return cmd.ExecuteScalar() is string s ? IsoParse.Offset(s) : null;
     }
 
     public int CountAll()
@@ -270,7 +270,7 @@ public sealed class PullRequestCache
                 DisplayName: r.IsDBNull(2) ? null : r.GetString(2),
                 Email: r.IsDBNull(3) ? null : r.GetString(3),
                 Kind: Enum.Parse<EngagementKind>(r.GetString(4)),
-                FirstEngagementUtc: r.IsDBNull(5) ? null : DateTimeOffset.Parse(r.GetString(5))));
+                FirstEngagementUtc: r.IsDBNull(5) ? null : IsoParse.Offset(r.GetString(5))));
         }
         return rows;
     }
@@ -332,14 +332,14 @@ public sealed class PullRequestCache
             Title: r.IsDBNull(2) ? null : r.GetString(2),
             AuthorId: r.IsDBNull(3) ? null : r.GetString(3),
             AuthorDisplayName: r.IsDBNull(4) ? null : r.GetString(4),
-            CreationUtc: DateTimeOffset.Parse(r.GetString(5)),
+            CreationUtc: IsoParse.Offset(r.GetString(5)),
             Status: Enum.Parse<PullRequestStatus>(r.GetString(6)),
-            ClosedUtc: r.IsDBNull(7) ? null : DateTimeOffset.Parse(r.GetString(7)),
+            ClosedUtc: r.IsDBNull(7) ? null : IsoParse.Offset(r.GetString(7)),
             FirstRequiredVoteId: r.IsDBNull(8) ? null : r.GetString(8),
-            FirstRequiredVoteUtc: r.IsDBNull(9) ? null : DateTimeOffset.Parse(r.GetString(9)),
+            FirstRequiredVoteUtc: r.IsDBNull(9) ? null : IsoParse.Offset(r.GetString(9)),
             FirstRequiredVoteValue: r.IsDBNull(10) ? null : r.GetInt32(10),
             BusinessHoursElapsed: r.IsDBNull(11) ? null : r.GetDouble(11),
             SlaMet: r.IsDBNull(12) ? null : r.GetInt32(12) == 1,
-            LastActivityUtc: r.IsDBNull(13) ? null : DateTimeOffset.Parse(r.GetString(13)));
+            LastActivityUtc: r.IsDBNull(13) ? null : IsoParse.Offset(r.GetString(13)));
     }
 }

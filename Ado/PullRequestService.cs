@@ -167,7 +167,7 @@ public sealed class PullRequestService
         var title = pr.TryGetProperty("title", out var titleEl) ? titleEl.GetString() : null;
 
         var closed = pr.TryGetProperty("closedDate", out var cd) && cd.ValueKind == JsonValueKind.String
-            ? DateTimeOffset.Parse(cd.GetString()!)
+            ? IsoParse.Offset(cd.GetString()!)
             : (DateTimeOffset?)null;
 
         return new CachedPullRequest(
@@ -176,7 +176,7 @@ public sealed class PullRequestService
             Title: title,
             AuthorId: authorId,
             AuthorDisplayName: authorName,
-            CreationUtc: DateTimeOffset.Parse(pr.GetProperty("creationDate").GetString()!),
+            CreationUtc: IsoParse.Offset(pr.GetProperty("creationDate").GetString()!),
             Status: status,
             ClosedUtc: closed,
             FirstRequiredVoteId: null,
