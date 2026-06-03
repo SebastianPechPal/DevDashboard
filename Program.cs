@@ -275,16 +275,15 @@ void OpenInBrowser(string? url)
         return;
     }
 
-    // Open in Chrome explicitly (the user's request): "chrome" resolves via the Windows
-    // App Paths registry key under ShellExecute. If Chrome isn't found, fall back to the
-    // default browser rather than crashing the dashboard.
+    // Open the URL in the OS default browser. UseShellExecute lets the shell pick the handler,
+    // which works across platforms (Windows shell, macOS 'open', Linux 'xdg-open'). Never crash
+    // the dashboard if no handler is available.
     try
     {
-        Process.Start(new ProcessStartInfo("chrome", url) { UseShellExecute = true });
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
     catch (Exception ex)
     {
-        AnsiConsole.MarkupLine($"[yellow]Chrome launch failed ({Markup.Escape(ex.Message)}); using default browser.[/]");
-        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        AnsiConsole.MarkupLine($"[yellow]Could not open browser: {Markup.Escape(ex.Message)}[/]");
     }
 }
