@@ -80,7 +80,7 @@ var syncService = new SyncService(
 await RunSyncAsync(isColdStart: cache.Repos.GetAll().Any(r => r.LastSyncUtc == null));
 
 var personalId = cache.Identities.GetAll()
-    .FirstOrDefault(i => i.Email != null && i.Email.Equals("s.pech@palfinger.com", StringComparison.OrdinalIgnoreCase))
+    .FirstOrDefault(i => i.Email != null && i.Email.Equals(config.AzureDevOps.CurrentUserEmail, StringComparison.OrdinalIgnoreCase))
     ?.Id;
 
 var excludedRepoNames = config.ExcludedFromStatsRepos

@@ -31,7 +31,7 @@ public sealed class CacheStore : IDisposable
     public static CacheStore OpenDefault()
     {
         var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var path = Path.Combine(root, "GoalDashboard", "cache.db");
+        var path = Path.Combine(root, "DevDashboard", "cache.db");
         return new CacheStore(path);
     }
 

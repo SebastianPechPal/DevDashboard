@@ -4,7 +4,9 @@ obj/
 *.db-journal
 *.db-wal
 *.db-shm
+appsettings.json
 appsettings.local.json
 .vs/
 .idea/
+.claude/
 *.user

@@ -16,10 +16,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="appsettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="appsettings.local.json">
+    <!-- Shipped so first run can seed %LOCALAPPDATA%\DevDashboard\appsettings.json.
+         The real config lives there, never in the repo. -->
+    <None Update="appsettings.template.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

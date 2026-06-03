@@ -10,18 +10,43 @@ public sealed class AppConfig
     public required MetricsConfig Metrics { get; init; }
     public PrAgentConfig PrAgent { get; init; } = new();
 
+    // The per-user directory under %LOCALAPPDATA% that holds both the config and the
+    // SQLite cache. Kept out of the repo so no personal data is ever committed.
+    public static string ConfigDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DevDashboard");
+
     public static AppConfig Load()
     {
+        var configPath = Path.Combine(ConfigDirectory, "appsettings.json");
+
+        // First run: no config yet. Seed one from the bundled template, point the user at it,
+        // and stop — running against placeholder values would only produce confusing errors.
+        if (!File.Exists(configPath))
+        {
+            SeedConfigFromTemplate(configPath);
+            Console.WriteLine(
+                $"No configuration found. A starter config was created at:\n  {configPath}\n" +
+                "Fill in your Azure DevOps organization, repositories and reviewers, then run again.");
+            Environment.Exit(1);
+        }
+
         var configuration = new ConfigurationBuilder()
-            .SetBasePath(AppContext.BaseDirectory)
-            .AddJsonFile("appsettings.json", optional: false)
-            .AddJsonFile("appsettings.local.json", optional: true)
+            .AddJsonFile(configPath, optional: false)
+            .AddJsonFile(Path.Combine(ConfigDirectory, "appsettings.local.json"), optional: true)
             .Build();
 
-        var bound = configuration.Get<AppConfig>()
-            ?? throw new InvalidOperationException("Failed to bind appsettings.json");
+        return configuration.Get<AppConfig>()
+            ?? throw new InvalidOperationException($"Failed to bind {configPath}");
+    }
 
-        return bound;
+    private static void SeedConfigFromTemplate(string configPath)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+        var template = Path.Combine(AppContext.BaseDirectory, "appsettings.template.json");
+        if (File.Exists(template))
+        {
+            File.Copy(template, configPath);
+        }
     }
 }
 
@@ -30,6 +55,10 @@ public sealed class AzureDevOpsConfig
     public required string OrganizationUrl { get; init; }
     public required string BoardsProject { get; init; }
     public required List<string> CandidateProjects { get; init; }
+
+    // Email of the signed-in (az login) user, used to surface their own review activity
+    // separately in the dashboard. Leave empty to disable the personal breakdown.
+    public string CurrentUserEmail { get; init; } = "";
 
     // Tracked repos mapped to their local working-copy path. An empty/missing value means the
     // repo is tracked but has no local checkout (the 'c' background-agent launch then refuses).
