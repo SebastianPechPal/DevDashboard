@@ -1,6 +1,6 @@
 namespace CLIGoalHelper.Cache;
 
-public sealed record CachedRepo(string Id, string Project, string Name, DateTimeOffset? LastSyncUtc);
+public sealed record CachedRepo(string Id, string Project, string Name, DateTimeOffset? LastSyncUtc, string? LocalPath = null);
 
 public sealed record CachedIdentity(string Id, string Descriptor, string DisplayName, string? Email);
 

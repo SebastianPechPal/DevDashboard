@@ -15,24 +15,26 @@ public sealed class RepoCache
     {
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO repo (repo_id, project, name, last_sync_utc)
-            VALUES ($id, $project, $name, $lastSync)
+            INSERT INTO repo (repo_id, project, name, last_sync_utc, local_path)
+            VALUES ($id, $project, $name, $lastSync, $localPath)
             ON CONFLICT(repo_id) DO UPDATE SET
                 project = excluded.project,
                 name = excluded.name,
-                last_sync_utc = excluded.last_sync_utc;
+                last_sync_utc = excluded.last_sync_utc,
+                local_path = excluded.local_path;
             """;
         cmd.Parameters.AddWithValue("$id", repo.Id);
         cmd.Parameters.AddWithValue("$project", repo.Project);
         cmd.Parameters.AddWithValue("$name", repo.Name);
         cmd.Parameters.AddWithValue("$lastSync", (object?)repo.LastSyncUtc?.UtcDateTime.ToString("o") ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$localPath", (object?)repo.LocalPath ?? DBNull.Value);
         cmd.ExecuteNonQuery();
     }
 
     public CachedRepo? GetByName(string name)
     {
         using var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT repo_id, project, name, last_sync_utc FROM repo WHERE name = $name;";
+        cmd.CommandText = "SELECT repo_id, project, name, last_sync_utc, local_path FROM repo WHERE name = $name;";
         cmd.Parameters.AddWithValue("$name", name);
         using var reader = cmd.ExecuteReader();
         return reader.Read() ? Map(reader) : null;
@@ -41,7 +43,7 @@ public sealed class RepoCache
     public List<CachedRepo> GetAll()
     {
         using var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT repo_id, project, name, last_sync_utc FROM repo;";
+        cmd.CommandText = "SELECT repo_id, project, name, last_sync_utc, local_path FROM repo;";
         using var reader = cmd.ExecuteReader();
         var results = new List<CachedRepo>();
         while (reader.Read())
@@ -66,6 +68,7 @@ public sealed class RepoCache
             Id: r.GetString(0),
             Project: r.GetString(1),
             Name: r.GetString(2),
-            LastSyncUtc: r.IsDBNull(3) ? null : DateTimeOffset.Parse(r.GetString(3)));
+            LastSyncUtc: r.IsDBNull(3) ? null : DateTimeOffset.Parse(r.GetString(3)),
+            LocalPath: r.IsDBNull(4) ? null : r.GetString(4));
     }
 }

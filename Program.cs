@@ -50,13 +50,16 @@ await AnsiConsole.Status()
     .StartAsync("Discovering repositories...", async _ =>
     {
         var allRepos = await repositoryService.ListAllAsync();
-        var configured = config.AzureDevOps.Repositories.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var repo in allRepos.Where(r => configured.Contains(r.Name)))
+        var configured = new Dictionary<string, string>(
+            config.AzureDevOps.Repositories, StringComparer.OrdinalIgnoreCase);
+        foreach (var repo in allRepos.Where(r => configured.ContainsKey(r.Name)))
         {
             // Upsert preserves last_sync_utc on conflict via excluded.last_sync_utc; we want to
-            // preserve the existing value, so re-read it first.
+            // preserve the existing value, so re-read it first. The local path comes from config
+            // (empty -> null = tracked but no local checkout).
             var existing = cache.Repos.GetByName(repo.Name);
-            cache.Repos.Upsert(new CachedRepo(repo.Id, repo.Project, repo.Name, existing?.LastSyncUtc));
+            var localPath = configured.TryGetValue(repo.Name, out var p) && !string.IsNullOrWhiteSpace(p) ? p : null;
+            cache.Repos.Upsert(new CachedRepo(repo.Id, repo.Project, repo.Name, existing?.LastSyncUtc, localPath));
         }
     });
 
@@ -112,6 +115,9 @@ while (true)
     dashboard.Render();
 
     var key = Console.ReadKey(intercept: true);
+    // The transient status line (set by 'c') was just shown in the render above; clear it so it
+    // lives for exactly one render cycle and doesn't linger across the next action.
+    dashboard.ClearStatus();
     if (key.Key == ConsoleKey.Q)
     {
         break;
@@ -123,6 +129,16 @@ while (true)
     if (key.Key == ConsoleKey.Tab)
     {
         dashboard.ToggleFocus();
+    }
+    // 'c' launches with the standard prompt; 'C' (shift) lets you append an extra instruction.
+    // KeyChar (not Key) so the case distinction survives shift/caps-lock correctly.
+    if (key.KeyChar == 'c')
+    {
+        LaunchAgentForSelectedPr(promptForExtra: false);
+    }
+    else if (key.KeyChar == 'C')
+    {
+        LaunchAgentForSelectedPr(promptForExtra: true);
     }
     if (key.Key is ConsoleKey.J or ConsoleKey.DownArrow)
     {
@@ -151,6 +167,105 @@ async Task RunSyncAsync(bool isColdStart)
             new PercentageColumn(),
             new ElapsedTimeColumn())
         .StartAsync(ctx => syncService.SyncAsync(ctx));
+}
+
+// Launches a background Claude agent (`claude --bg`) focused on the selected PR, in that PR's
+// repo's local working copy. Only fires when the Open-PRs panel is focused (SelectedPrAgentTarget
+// is null otherwise). Refuses with a visible status when the repo has no usable local path.
+void LaunchAgentForSelectedPr(bool promptForExtra)
+{
+    var target = dashboard.SelectedPrAgentTarget;
+    if (target is null)
+    {
+        return;
+    }
+
+    if (string.IsNullOrWhiteSpace(target.LocalPath) || !Directory.Exists(target.LocalPath))
+    {
+        dashboard.SetStatus($"[yellow]⚠ No local path for repo '{Markup.Escape(target.RepoName)}' — add it to appsettings[/]");
+        return;
+    }
+
+    var prompt = config.PrAgent.PromptTemplate.Replace("{URL}", target.Url);
+    if (promptForExtra)
+    {
+        // Inline input field. Esc cancels the whole launch; empty (just Enter) sends the
+        // standard prompt only; otherwise the typed text is appended to the standard prompt.
+        var extra = ReadLineOrCancel($"[cyan]Extra instruction for PR {target.PrId}[/] [grey](esc to cancel)[/]:");
+        if (extra is null)
+        {
+            dashboard.SetStatus("[grey]Agent launch cancelled[/]");
+            return;
+        }
+        if (!string.IsNullOrWhiteSpace(extra))
+        {
+            prompt = $"{prompt}\n\n{extra}";
+        }
+    }
+
+    var name = string.IsNullOrWhiteSpace(target.Title) ? target.PrId.ToString() : $"{target.PrId}: {target.Title}";
+
+    try
+    {
+        // claude.exe is a console app; from a console parent it would otherwise write its
+        // "backgrounded · <id>" line onto the dashboard. Redirecting the streams keeps that output
+        // off-screen. `--bg` is fire-and-forget (returns immediately), so we don't wait.
+        var psi = new ProcessStartInfo
+        {
+            FileName = "claude",
+            WorkingDirectory = target.LocalPath,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        psi.ArgumentList.Add("--bg");
+        psi.ArgumentList.Add("--name");
+        psi.ArgumentList.Add(name);
+        psi.ArgumentList.Add(prompt);
+        Process.Start(psi);
+        dashboard.SetStatus($"[green]⏵ Launched agent for PR {target.PrId} ({Markup.Escape(target.RepoName)})[/]");
+    }
+    catch (Exception ex)
+    {
+        dashboard.SetStatus($"[red]Agent launch failed: {Markup.Escape(ex.Message)}[/]");
+    }
+}
+
+// Reads a line of input with basic editing (echoed). Returns the text on Enter, or null if the
+// user pressed Esc to cancel. Used for the optional extra-instruction prompt; the dashboard's own
+// Render clears it on the next loop iteration.
+string? ReadLineOrCancel(string promptMarkup)
+{
+    AnsiConsole.Markup(promptMarkup + " ");
+    var input = string.Empty;
+    while (true)
+    {
+        var k = Console.ReadKey(intercept: true);
+        switch (k.Key)
+        {
+            case ConsoleKey.Escape:
+                AnsiConsole.WriteLine();
+                return null;
+            case ConsoleKey.Enter:
+                AnsiConsole.WriteLine();
+                return input;
+            case ConsoleKey.Backspace:
+                if (input.Length > 0)
+                {
+                    input = input[..^1];
+                    Console.Write("\b \b");
+                }
+                break;
+            default:
+                if (!char.IsControl(k.KeyChar))
+                {
+                    input += k.KeyChar;
+                    Console.Write(k.KeyChar);
+                }
+                break;
+        }
+    }
 }
 
 void OpenInBrowser(string? url)

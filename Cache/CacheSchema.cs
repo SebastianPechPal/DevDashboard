@@ -84,6 +84,11 @@ internal static class CacheSchema
         // v6 — last-activity timestamp for the open-PRs view (latest commit push OR latest text comment)
         """
         ALTER TABLE pull_request ADD COLUMN last_activity_utc TEXT NULL;
+        """,
+
+        // v7 — local working-copy path per repo, used as the cwd when launching a background agent
+        """
+        ALTER TABLE repo ADD COLUMN local_path TEXT NULL;
         """
     };
 

@@ -8,6 +8,7 @@ public sealed class AppConfig
     public required List<string> RequiredReviewers { get; init; }
     public List<string> ExcludedFromStatsRepos { get; init; } = new();
     public required MetricsConfig Metrics { get; init; }
+    public PrAgentConfig PrAgent { get; init; } = new();
 
     public static AppConfig Load()
     {
@@ -29,7 +30,17 @@ public sealed class AzureDevOpsConfig
     public required string OrganizationUrl { get; init; }
     public required string BoardsProject { get; init; }
     public required List<string> CandidateProjects { get; init; }
-    public required List<string> Repositories { get; init; }
+
+    // Tracked repos mapped to their local working-copy path. An empty/missing value means the
+    // repo is tracked but has no local checkout (the 'c' background-agent launch then refuses).
+    public required Dictionary<string, string> Repositories { get; init; }
+}
+
+public sealed class PrAgentConfig
+{
+    // Prompt handed to `claude --bg`; {URL} is replaced with the selected PR's web URL.
+    public string PromptTemplate { get; init; } =
+        "Focus on this PR {URL}. Fetch azure infos and wait for next input";
 }
 
 public sealed class MetricsConfig

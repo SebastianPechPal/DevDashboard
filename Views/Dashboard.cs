@@ -8,6 +8,9 @@ using Spectre.Console.Rendering;
 
 namespace CLIGoalHelper.Views;
 
+// The selected PR's launch target for the background-agent ('c') action.
+public sealed record PrAgentTarget(int PrId, string? Title, string RepoName, string? LocalPath, string Url);
+
 public sealed class Dashboard
 {
     private const int TargetPercentage = 65;
@@ -35,6 +38,10 @@ public sealed class Dashboard
     // but for the bugs panel.
     private IReadOnlyList<BugWorkItemCache.RecentBug> _recentBugs = [];
     private int _selectedBugIndex;
+
+    // Transient one-line feedback (e.g. after launching a background agent). Shown for a single
+    // render cycle; the main loop clears it on the next keypress.
+    private string? _status;
 
     public Dashboard(
         CacheStore cache,
@@ -72,7 +79,13 @@ public sealed class Dashboard
         // for both, Columns wraps the bug panel below the DLR panel.
         AnsiConsole.Write(new Columns(BuildDlrPanel(), BuildRecentBugsPanel()).Collapse());
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine("[grey][[tab]] switch panel   [[j/k]] select   [[enter]] open in browser   [[r]] refresh   [[q]] quit[/]");
+        // The agent keys act on the selected PR, so only advertise them while the PR panel is focused.
+        var agentHints = _focus == FocusTarget.Pulls ? "[[c]] agent   [[C]] agent+note   " : "";
+        AnsiConsole.MarkupLine($"[grey][[tab]] switch panel   [[j/k]] select   [[enter]] open in browser   {agentHints}[[r]] refresh   [[q]] quit[/]");
+        if (_status is not null)
+        {
+            AnsiConsole.MarkupLine(_status);
+        }
     }
 
     private Panel BuildDlrPanel()
@@ -389,10 +402,40 @@ public sealed class Dashboard
             }
 
             var (pr, repo) = _openPrs[_selectedPrIndex];
-            var org = _config.AzureDevOps.OrganizationUrl.TrimEnd('/');
-            return $"{org}/{Uri.EscapeDataString(repo.Project)}/_git/{Uri.EscapeDataString(repo.Name)}/pullrequest/{pr.Id}";
+            return BuildPrUrl(pr, repo);
         }
     }
+
+    // The selected PR's launch target for the 'c' background-agent action, or null when the PR
+    // panel isn't focused / there's no selection. Carries the repo's local path so the caller can
+    // both decide whether it can launch and use it as the agent's working directory.
+    public PrAgentTarget? SelectedPrAgentTarget
+    {
+        get
+        {
+            if (_focus != FocusTarget.Pulls)
+            {
+                return null;
+            }
+            if (_selectedPrIndex < 0 || _selectedPrIndex >= _openPrs.Count)
+            {
+                return null;
+            }
+
+            var (pr, repo) = _openPrs[_selectedPrIndex];
+            return new PrAgentTarget(pr.Id, pr.Title, repo.Name, repo.LocalPath, BuildPrUrl(pr, repo));
+        }
+    }
+
+    private string BuildPrUrl(CachedPullRequest pr, CachedRepo repo)
+    {
+        var org = _config.AzureDevOps.OrganizationUrl.TrimEnd('/');
+        return $"{org}/{Uri.EscapeDataString(repo.Project)}/_git/{Uri.EscapeDataString(repo.Name)}/pullrequest/{pr.Id}";
+    }
+
+    // Sets/clears the transient status line (see _status). SetStatus takes Spectre markup.
+    public void SetStatus(string markup) => _status = markup;
+    public void ClearStatus() => _status = null;
 
     private string? SelectedBugUrl
     {
