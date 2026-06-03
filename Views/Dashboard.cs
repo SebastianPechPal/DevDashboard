@@ -1,12 +1,12 @@
 using System.Text;
-using CLIGoalHelper.BusinessTime;
-using CLIGoalHelper.Cache;
-using CLIGoalHelper.Config;
-using CLIGoalHelper.Metrics;
+using DevDashboard.BusinessTime;
+using DevDashboard.Cache;
+using DevDashboard.Config;
+using DevDashboard.Metrics;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 
-namespace CLIGoalHelper.Views;
+namespace DevDashboard.Views;
 
 // The selected PR's launch target for the background-agent ('c') action.
 public sealed record PrAgentTarget(int PrId, string? Title, string RepoName, string? LocalPath, string Url);

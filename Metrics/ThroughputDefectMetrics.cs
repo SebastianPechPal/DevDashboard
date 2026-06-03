@@ -1,6 +1,6 @@
-using CLIGoalHelper.Cache;
+using DevDashboard.Cache;
 
-namespace CLIGoalHelper.Metrics;
+namespace DevDashboard.Metrics;
 
 public sealed record ThroughputDefectMonth(string YearMonth, int Prs, int Bugs)
 {

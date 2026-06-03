@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 
-namespace CLIGoalHelper.Config;
+namespace DevDashboard.Config;
 
 public sealed class AppConfig
 {

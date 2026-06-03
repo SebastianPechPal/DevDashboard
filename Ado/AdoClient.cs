@@ -4,7 +4,7 @@ using System.Text.Json;
 using Azure.Core;
 using Azure.Identity;
 
-namespace CLIGoalHelper.Ado;
+namespace DevDashboard.Ado;
 
 /// <summary>
 /// HTTP client for Azure DevOps REST. Uses AzureCliCredential so callers

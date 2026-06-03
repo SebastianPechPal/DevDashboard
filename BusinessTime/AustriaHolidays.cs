@@ -1,4 +1,4 @@
-namespace CLIGoalHelper.BusinessTime;
+namespace DevDashboard.BusinessTime;
 
 /// <summary>
 /// Hardcoded Austrian public holidays 2025–2026. Easter-relative dates are precomputed

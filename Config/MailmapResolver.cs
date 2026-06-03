@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace CLIGoalHelper.Config;
+namespace DevDashboard.Config;
 
 /// <summary>
 /// Reads a git mailmap (~/.mailmap) and exposes a two-letter short-code lookup

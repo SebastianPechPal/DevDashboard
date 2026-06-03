@@ -1,4 +1,4 @@
-namespace CLIGoalHelper.Cache;
+namespace DevDashboard.Cache;
 
 public sealed record CachedRepo(string Id, string Project, string Name, DateTimeOffset? LastSyncUtc, string? LocalPath = null);
 

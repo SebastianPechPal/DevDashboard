@@ -1,4 +1,4 @@
-# CLIGoalHelper
+# DevDashboard
 
 A terminal dashboard that tracks Azure DevOps PR-review turnaround and bug/defect
 metrics for a fixed set of Palfinger repositories. This file fixes the language the

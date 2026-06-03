@@ -1,11 +1,11 @@
 using System.Diagnostics;
-using CLIGoalHelper.Ado;
-using CLIGoalHelper.BusinessTime;
-using CLIGoalHelper.Cache;
-using CLIGoalHelper.Config;
-using CLIGoalHelper.Metrics;
-using CLIGoalHelper.Sync;
-using CLIGoalHelper.Views;
+using DevDashboard.Ado;
+using DevDashboard.BusinessTime;
+using DevDashboard.Cache;
+using DevDashboard.Config;
+using DevDashboard.Metrics;
+using DevDashboard.Sync;
+using DevDashboard.Views;
 using Spectre.Console;
 
 AnsiConsole.Write(new FigletText("Dev Dashboard").Color(Color.Cyan1));

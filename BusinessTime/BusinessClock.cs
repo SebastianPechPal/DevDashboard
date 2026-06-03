@@ -1,4 +1,4 @@
-namespace CLIGoalHelper.BusinessTime;
+namespace DevDashboard.BusinessTime;
 
 /// <summary>
 /// Computes elapsed business time between two UTC instants. Business days = Mon–Fri in

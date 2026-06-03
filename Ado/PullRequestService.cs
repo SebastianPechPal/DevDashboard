@@ -1,7 +1,7 @@
 using System.Text.Json;
-using CLIGoalHelper.Cache;
+using DevDashboard.Cache;
 
-namespace CLIGoalHelper.Ado;
+namespace DevDashboard.Ado;
 
 public sealed record PrReviewer(string Id, string? DisplayName, string? Email, bool IsContainer);
 

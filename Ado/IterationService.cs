@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace CLIGoalHelper.Ado;
+namespace DevDashboard.Ado;
 
 public sealed class IterationService
 {

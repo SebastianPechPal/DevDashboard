@@ -1,4 +1,4 @@
-namespace CLIGoalHelper.Ado;
+namespace DevDashboard.Ado;
 
 public sealed record AdoRepository(string Id, string Name, string Project);
 

@@ -1,9 +1,9 @@
-using CLIGoalHelper.Ado;
-using CLIGoalHelper.BusinessTime;
-using CLIGoalHelper.Cache;
+using DevDashboard.Ado;
+using DevDashboard.BusinessTime;
+using DevDashboard.Cache;
 using Spectre.Console;
 
-namespace CLIGoalHelper.Sync;
+namespace DevDashboard.Sync;
 
 /// <summary>
 /// Orchestrates a sync pass: pulls PR metadata for each repo, then for each active PR

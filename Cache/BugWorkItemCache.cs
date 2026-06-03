@@ -1,6 +1,6 @@
 using Microsoft.Data.Sqlite;
 
-namespace CLIGoalHelper.Cache;
+namespace DevDashboard.Cache;
 
 public sealed class BugWorkItemCache
 {
