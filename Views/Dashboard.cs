@@ -63,28 +63,31 @@ public sealed class Dashboard
         _excludedRepoNames = excludedRepoNames;
     }
 
-    public void Render()
+    /// <summary>Paints one frame to <paramref name="console"/> at its current cursor position. The
+    /// caller renders this off-screen and blits it in place (see <see cref="FrameBlitter"/>) —
+    /// repainting over the previous frame instead of clearing the screen keeps the redraw
+    /// flicker-free, so there's deliberately no clear here.</summary>
+    public void Render(IAnsiConsole console)
     {
-        AnsiConsole.Clear();
-        AnsiConsole.Write(new FigletText("Dev Dashboard").Color(Color.Cyan1));
-        AnsiConsole.MarkupLine($"[grey]Last refresh: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}[/]");
-        AnsiConsole.WriteLine();
+        console.Write(new FigletText("Dev Dashboard").Color(Color.Cyan1));
+        console.MarkupLine($"[grey]Last refresh: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}[/]");
+        console.WriteLine();
 
-        AnsiConsole.Write(BuildOpenPrsPanel());
-        AnsiConsole.WriteLine();
-        AnsiConsole.Write(BuildMetricPanel());
-        AnsiConsole.WriteLine();
+        console.Write(BuildOpenPrsPanel());
+        console.WriteLine();
+        console.Write(BuildMetricPanel());
+        console.WriteLine();
         // DLR stats on the left, the most-recent bugs alongside on the right. Collapse() sizes each
         // panel to its content (rather than stretching to equal halves); on a terminal too narrow
         // for both, Columns wraps the bug panel below the DLR panel.
-        AnsiConsole.Write(new Columns(BuildDlrPanel(), BuildRecentBugsPanel()).Collapse());
-        AnsiConsole.WriteLine();
+        console.Write(new Columns(BuildDlrPanel(), BuildRecentBugsPanel()).Collapse());
+        console.WriteLine();
         // The agent keys act on the selected PR, so only advertise them while the PR panel is focused.
         var agentHints = _focus == FocusTarget.Pulls ? "[[c]] agent   [[C]] agent+note   " : "";
-        AnsiConsole.MarkupLine($"[grey][[tab]] switch panel   [[j/k]] select   [[enter]] open in browser   {agentHints}[[r]] refresh   [[q]] quit[/]");
+        console.MarkupLine($"[grey][[tab]] switch panel   [[j/k]] select   [[enter]] open in browser   {agentHints}[[r]] refresh   [[q]] quit[/]");
         if (_status is not null)
         {
-            AnsiConsole.MarkupLine(_status);
+            console.MarkupLine(_status);
         }
     }
 

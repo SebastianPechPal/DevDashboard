@@ -110,9 +110,33 @@ var throughputDefectMetrics = new ThroughputDefectMetrics(
 var shortNames = MailmapResolver.LoadFromHome();
 var dashboard = new Dashboard(cache, clock, reviewMetrics, bugMetrics, throughputDefectMetrics, config, shortNames, excludedRepoNames);
 
+// The dashboard frame is rendered off-screen into this buffer, then blitted in place (FrameBlitter)
+// so each repaint draws over the previous frame instead of clearing the screen — no flicker. The
+// off-screen console mirrors the live one's capabilities so colours and glyphs render identically.
+var frameWriter = new StringWriter();
+var frameConsole = AnsiConsole.Create(new AnsiConsoleSettings
+{
+    Ansi = AnsiConsole.Profile.Capabilities.Ansi ? AnsiSupport.Yes : AnsiSupport.No,
+    ColorSystem = AnsiConsole.Profile.Capabilities.ColorSystem switch
+    {
+        ColorSystem.TrueColor => ColorSystemSupport.TrueColor,
+        ColorSystem.EightBit => ColorSystemSupport.EightBit,
+        ColorSystem.Standard => ColorSystemSupport.Standard,
+        ColorSystem.Legacy => ColorSystemSupport.Legacy,
+        _ => ColorSystemSupport.NoColors,
+    },
+    Out = new AnsiConsoleOutput(frameWriter),
+});
+frameConsole.Profile.Capabilities.Unicode = AnsiConsole.Profile.Capabilities.Unicode;
+
+// One clear wipes the startup chatter; from here every frame repaints in place (see RenderFrame).
+// Hide the cursor so it doesn't strobe across the frame as it repaints.
+AnsiConsole.Clear();
+AnsiConsole.Cursor.Hide();
+
 while (true)
 {
-    dashboard.Render();
+    RenderFrame();
 
     var key = Console.ReadKey(intercept: true);
     // The transient status line (set by 'c') was just shown in the render above; clear it so it
@@ -154,7 +178,26 @@ while (true)
     }
 }
 
+AnsiConsole.Cursor.Show();
+AnsiConsole.Clear();
 AnsiConsole.MarkupLine("[grey]Bye.[/]");
+
+// Renders the dashboard off-screen at the live console's size, then blits it in place: each line is
+// drawn at an absolute row with its tail cleared (FrameBlitter), so a shrinking frame leaves no
+// stale cells — and no clear-screen flicker. When ANSI is unavailable, fall back to writing the raw
+// frame (no in-place control codes to honour).
+void RenderFrame()
+{
+    frameConsole.Profile.Width = AnsiConsole.Profile.Width;
+    frameConsole.Profile.Height = AnsiConsole.Profile.Height;
+    frameWriter.GetStringBuilder().Clear();
+    dashboard.Render(frameConsole);
+
+    var frame = frameWriter.ToString();
+    var output = AnsiConsole.Profile.Capabilities.Ansi ? FrameBlitter.ToInPlaceRepaint(frame) : frame;
+    AnsiConsole.Profile.Out.Writer.Write(output);
+    AnsiConsole.Profile.Out.Writer.Flush();
+}
 
 async Task RunSyncAsync(bool isColdStart)
 {
@@ -237,6 +280,8 @@ void LaunchAgentForSelectedPr(bool promptForExtra)
 // Render clears it on the next loop iteration.
 string? ReadLineOrCancel(string promptMarkup)
 {
+    // The loop hides the cursor for flicker-free repaints; show it so the user can see what they type.
+    AnsiConsole.Cursor.Show();
     AnsiConsole.Markup(promptMarkup + " ");
     var input = string.Empty;
     while (true)
@@ -246,9 +291,11 @@ string? ReadLineOrCancel(string promptMarkup)
         {
             case ConsoleKey.Escape:
                 AnsiConsole.WriteLine();
+                AnsiConsole.Cursor.Hide();
                 return null;
             case ConsoleKey.Enter:
                 AnsiConsole.WriteLine();
+                AnsiConsole.Cursor.Hide();
                 return input;
             case ConsoleKey.Backspace:
                 if (input.Length > 0)
