@@ -317,13 +317,13 @@ public sealed class Dashboard
             var excluded = _excludedRepoNames.Contains(repo.Name);
 
             string status;
-            if (pr.FirstRequiredVoteUtc is null)
+            if (pr.CurrentRequiredVoteValue is null)
             {
                 status = businessAge > slaHours ? "[red]OVERDUE[/]" : "[yellow]Needs answer[/]";
             }
             else
             {
-                status = pr.FirstRequiredVoteValue switch
+                status = pr.CurrentRequiredVoteValue switch
                 {
                     >= 5 => "[green]Approved · awaiting more[/]",
                     -5 => "[orange1]Waiting for author[/]",

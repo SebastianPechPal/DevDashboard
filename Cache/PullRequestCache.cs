@@ -90,6 +90,25 @@ public sealed class PullRequestCache
             cmd.ExecuteNonQuery();
         }
     }
+
+    /// <summary>
+    /// Sets the current (latest) required-reviewer vote that drives the live open-PR status.
+    /// Recomputed every sync; null when no required reviewer currently holds a non-zero vote.
+    /// </summary>
+    public void SetCurrentRequiredVote(int prId, int? voteValue)
+    {
+        lock (_writeLock)
+        {
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = """
+                UPDATE pull_request SET current_required_vote_value = $value WHERE pr_id = $id;
+                """;
+            cmd.Parameters.AddWithValue("$id", prId);
+            cmd.Parameters.AddWithValue("$value", (object?)voteValue ?? DBNull.Value);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
     public CachedPullRequest? GetById(int id)
     {
         using var cmd = _connection.CreateCommand();
@@ -309,7 +328,7 @@ public sealed class PullRequestCache
         SELECT pr_id, repo_id, title, author_id, author_display_name,
                creation_utc, status, closed_utc,
                first_required_vote_id, first_required_vote_utc, first_required_vote_value,
-               business_hours_elapsed, sla_met, last_activity_utc
+               business_hours_elapsed, sla_met, last_activity_utc, current_required_vote_value
         FROM pull_request
         """;
 
@@ -340,6 +359,7 @@ public sealed class PullRequestCache
             FirstRequiredVoteValue: r.IsDBNull(10) ? null : r.GetInt32(10),
             BusinessHoursElapsed: r.IsDBNull(11) ? null : r.GetDouble(11),
             SlaMet: r.IsDBNull(12) ? null : r.GetInt32(12) == 1,
-            LastActivityUtc: r.IsDBNull(13) ? null : IsoParse.Offset(r.GetString(13)));
+            LastActivityUtc: r.IsDBNull(13) ? null : IsoParse.Offset(r.GetString(13)),
+            CurrentRequiredVoteValue: r.IsDBNull(14) ? null : r.GetInt32(14));
     }
 }

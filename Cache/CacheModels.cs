@@ -33,7 +33,8 @@ public sealed record CachedPullRequest(
     int? FirstRequiredVoteValue,
     double? BusinessHoursElapsed,
     bool? SlaMet,
-    DateTimeOffset? LastActivityUtc);
+    DateTimeOffset? LastActivityUtc,
+    int? CurrentRequiredVoteValue = null);
 
 public enum EngagementKind
 {

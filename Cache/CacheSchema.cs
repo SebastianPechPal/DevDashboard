@@ -89,6 +89,13 @@ internal static class CacheSchema
         // v7 — local working-copy path per repo, used as the cwd when launching a background agent
         """
         ALTER TABLE repo ADD COLUMN local_path TEXT NULL;
+        """,
+
+        // v8 — current (latest) required-reviewer vote, recomputed every sync. Drives the live
+        // open-PR status; the frozen first_required_vote_* columns stay dedicated to the
+        // turnaround metric.
+        """
+        ALTER TABLE pull_request ADD COLUMN current_required_vote_value INTEGER NULL;
         """
     };
 

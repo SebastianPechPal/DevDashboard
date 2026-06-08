@@ -180,6 +180,7 @@ public sealed class SyncService
             {
                 ApplyFirstRequiredVote(snap.Pr, activity.Votes);
             }
+            ApplyCurrentRequiredVote(snap.Pr, activity.Votes);
 
             ApplyLastActivity(snap.Pr, latestIteration, activity.LatestCommentUtc);
 
@@ -233,6 +234,28 @@ public sealed class SyncService
         var elapsed = _clock.ElapsedHours(pr.CreationUtc, first.At);
         _cache.PullRequests.SetFirstRequiredVote(
             pr.Id, first.VoterId, first.At, first.VoteValue, elapsed, slaMet: elapsed <= _slaHours);
+    }
+
+    private void ApplyCurrentRequiredVote(CachedPullRequest pr, IReadOnlyList<VoteEvent> votes)
+    {
+        // Each required reviewer's current vote is their latest event (votes arrive sorted by
+        // time, so last-write-wins); a reset to 0 clears their stance. The live status reflects
+        // the most recent non-zero required vote and is recomputed every sync — unlike the frozen
+        // first_required_vote_value — so a changed vote (e.g. -5 -> +10) is reflected.
+        var currentByReviewer = new Dictionary<string, VoteEvent>();
+        foreach (var v in votes)
+        {
+            if (!_requiredReviewerIds.Contains(v.VoterId)) continue;
+            if (v.VoterId == pr.AuthorId) continue;
+            currentByReviewer[v.VoterId] = v;
+        }
+
+        var current = currentByReviewer.Values
+            .Where(v => v.VoteValue != 0)
+            .OrderByDescending(v => v.At)
+            .FirstOrDefault();
+
+        _cache.PullRequests.SetCurrentRequiredVote(pr.Id, current?.VoteValue);
     }
 
     private static List<CachedPrEngagement> BuildEngagements(
